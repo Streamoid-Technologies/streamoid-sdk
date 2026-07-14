@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# TypeScript / Node
+node_modules/
+typescript/dist/
+*.tsbuildinfo
+
+# Go
+go/streamoid-sdk
+
+# Editors
+.DS_Store
