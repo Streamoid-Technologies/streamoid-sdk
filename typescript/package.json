@@ -1,0 +1,37 @@
+{
+  "name": "@streamoid-technologies/sdk",
+  "version": "0.1.0",
+  "description": "Streamoid platform SDK (L1): event envelope, C6 object keys, C3 secrets, analytics/audit capture, files index, MCP self-registration.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Streamoid-Technologies/streamoid-sdk.git",
+    "directory": "typescript"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "tsx --test tests/*.test.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
