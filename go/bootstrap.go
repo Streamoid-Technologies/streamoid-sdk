@@ -7,8 +7,14 @@ import (
 )
 
 // BootstrapOptions carries what a cmd/ service supplies when wiring itself
-// into the platform SDK at startup (see Bootstrap).
+// into the platform SDK at startup (see Bootstrap). Product/Owner are
+// required from the caller -- this package serves every product, so it
+// cannot guess which one is calling it (see LoadConfigOptions.DefaultProduct
+// for the same reasoning).
 type BootstrapOptions struct {
+	// Product is this service's product tag (e.g. "catalogix", "artifax"),
+	// used as STREAMOID_PRODUCT's default and the MCP registry's owner.
+	Product string
 	// ServiceName is this process's logical name (e.g. "products-set"), used
 	// as both the SDK's Source tag and the MCP registry's server id.
 	ServiceName string
@@ -31,7 +37,7 @@ func Bootstrap(ctx context.Context, opts BootstrapOptions, log *slog.Logger) *Cl
 	if log == nil {
 		log = slog.Default()
 	}
-	cfg := LoadConfig(LoadConfigOptions{DefaultProduct: "catalogix", DefaultSource: opts.ServiceName})
+	cfg := LoadConfig(LoadConfigOptions{DefaultProduct: opts.Product, DefaultSource: opts.ServiceName})
 	client := NewClient(cfg, log)
 
 	if opts.URL == "" {
@@ -46,7 +52,7 @@ func Bootstrap(ctx context.Context, opts BootstrapOptions, log *slog.Logger) *Cl
 	go func() {
 		if err := client.RegisterMCPServer(ctx, RegisterMCPServerOptions{
 			ServerID:    opts.ServiceName,
-			Owner:       "catalogix",
+			Owner:       opts.Product,
 			DisplayName: opts.ServiceName,
 			URL:         opts.URL,
 			Transport:   "http",

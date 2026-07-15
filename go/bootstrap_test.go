@@ -10,9 +10,12 @@ func TestBootstrapSkipsRegistrationWithoutURL(t *testing.T) {
 	rs, srv := newRecordingServer(t, nil)
 	t.Setenv("STREAMOID_PLATFORM_API_URL", srv.URL)
 
-	client := Bootstrap(context.Background(), BootstrapOptions{ServiceName: "products-set"}, nil)
+	client := Bootstrap(context.Background(), BootstrapOptions{Product: "catalogix", ServiceName: "products-set"}, nil)
 	if client == nil {
 		t.Fatal("expected a non-nil client even without a service URL")
+	}
+	if client.Config().Product != "catalogix" {
+		t.Fatalf("expected Product to flow through to the config, got %q", client.Config().Product)
 	}
 	// Registration is fire-and-forget; give the (non-existent) goroutine a
 	// moment, then assert nothing was sent.
@@ -27,6 +30,7 @@ func TestBootstrapRegistersWhenURLConfigured(t *testing.T) {
 	t.Setenv("STREAMOID_PLATFORM_API_URL", srv.URL)
 
 	client := Bootstrap(context.Background(), BootstrapOptions{
+		Product:     "catalogix",
 		ServiceName: "products-set",
 		URL:         "http://products-set.internal:8080",
 		HealthPath:  "/v1/set/test",
@@ -45,5 +49,8 @@ func TestBootstrapRegistersWhenURLConfigured(t *testing.T) {
 	}
 	if reqs[0].Body["serverId"] != "products-set" {
 		t.Fatalf("expected serverId=products-set in registration payload, got %+v", reqs[0].Body)
+	}
+	if reqs[0].Body["owner"] != "catalogix" {
+		t.Fatalf("expected owner=catalogix (from opts.Product, not a hardcoded default), got %+v", reqs[0].Body)
 	}
 }
