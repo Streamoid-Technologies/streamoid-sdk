@@ -1,0 +1,26 @@
+name: Release cut
+
+# Trigger only. The logic lives once, in netra-pr-reviewer, and is shared by
+# every repo on the release train:
+#   https://github.com/Streamoid-Technologies/netra-pr-reviewer/blob/main/docs/release-suite.md
+#
+# Do not add logic here, and do not rename this file - release-finalize dates
+# this repo's entry to the train by finding the commit that first added
+# `.github/workflows/release-cut.yml` on main, and a rename makes it try to tag
+# every release PR this repo has ever merged.
+on:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cut:
+    uses: Streamoid-Technologies/netra-pr-reviewer/.github/workflows/release-cut.yml@release-suite/v1
+    # Named, never `inherit`: this repo's GITLAB_* and registry credentials have
+    # no business being passed to the release suite.
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
