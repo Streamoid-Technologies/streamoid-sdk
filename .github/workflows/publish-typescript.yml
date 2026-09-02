@@ -20,7 +20,26 @@
 # Triggering on "the version in package.json is not on the registry" makes the
 # run idempotent — re-running publishes nothing, a merge that touches no
 # version is a no-op, and what ships is exactly what was reviewed and merged.
-# Bump the version in the PR; merging to main ships it.
+# Bump the version in the PR; merging ships it.
+#
+# WHY `develop` (AND main), NOT main ALONE
+# npm-components has no `develop` — every PR merges straight to `main`, so
+# "publish on push to main" IS "publish when a PR merges" there. This repo's
+# trunk is `develop`, so the same line here would mean a merged version bump
+# publishes nothing until someone cuts a release to main. stream-agent already
+# shipped that exact bug: its publisher triggered on a `main` that work never
+# reached, so it never once ran and 0.2.10 had to go out by hand. Trigger on the
+# branch work actually lands on. `main` is listed too so a hotfix that lands
+# there directly still ships; version-diff makes the second look a no-op.
+#
+# WHY NO `paths:` FILTER
+# The version guard is the real gate and it is cheap — it runs before any
+# publish step, so a no-op costs seconds. A `paths: typescript/**` filter on top
+# bought nothing and cost a whole class of bug, again already seen in
+# stream-agent: 0.2.11 was bumped in one PR and the trigger corrected in the
+# next, and because that second merge touched only the workflow file, nothing
+# fired and the bump sat unpublished. Any push to a release branch now asks the
+# one question that matters — is this version on npm yet.
 #
 # AUTH
 #   Uses the org-level `NPM_TOKEN` secret. It must be an npm AUTOMATION token
@@ -40,10 +59,7 @@ name: publish-typescript
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "typescript/**"
-      - ".github/workflows/publish-typescript.yml"
+    branches: [develop, main]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -146,7 +162,9 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          if [ "${{ steps.plan.outputs.publish }}" != "true" ]; then
+          if [ -z "${{ steps.plan.outputs.version }}" ]; then
+            echo "The run ended before it worked out whether a publish was needed — see the failing step above." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.plan.outputs.publish }}" != "true" ]; then
             echo "Nothing to publish — \`${{ steps.plan.outputs.name }}@${{ steps.plan.outputs.version }}\` is already on npm." >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "### Dry run — would publish" >> "$GITHUB_STEP_SUMMARY"

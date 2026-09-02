@@ -29,12 +29,14 @@ reimplementation of the same contracts (not bindings around one core):
 Each language releases independently, since they move on separate schedules. A
 change to one language does not require bumping the others.
 
-- **TypeScript** ships on merge to `main`: bump `version` in
-  `typescript/package.json` in the PR, and
-  [`publish-typescript.yml`](.github/workflows/publish-typescript.yml) publishes
-  it because that version is not yet on the registry. Never publish by hand — a
-  hand publish can ship a tree that exists in no commit, which is exactly how a
-  stale `@streamoid/agent` bundle once reached the registry.
+- **TypeScript** ships on merge: bump `version` in `typescript/package.json` in
+  the PR, and when it lands on `develop` (the trunk — or on `main`, for a
+  hotfix), [`publish-typescript.yml`](.github/workflows/publish-typescript.yml)
+  publishes it because that version is not yet on the registry. Merging a PR
+  that touches no version is a no-op, and re-running publishes nothing. Never
+  publish by hand — a hand publish can ship a tree that exists in no commit,
+  which is exactly how a stale `@streamoid/agent` bundle once reached the
+  registry.
 - **Python and Go** are tagged: `python-vX.Y.Z` and `go/vX.Y.Z` (the `go/`
   prefix is required by Go's nested-module tagging convention — see
   https://go.dev/ref/mod#vcs-version). Consumers pin the tag directly, so the
