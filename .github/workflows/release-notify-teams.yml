@@ -1,0 +1,32 @@
+name: Notify Teams on release
+
+# Trigger only - see release-cut.yml. Logic lives in netra-pr-reviewer.
+#
+# Safe with or without a channel: the shared workflow warns and exits green
+# when TEAMS_RELEASE_WEBHOOK is unset, so this is a no-op until one is set.
+# Per-channel routing is a repo-level secret of that name shadowing the org one.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to (re-)announce, e.g. v0.2.0"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify:
+    uses: Streamoid-Technologies/netra-pr-reviewer/.github/workflows/release-notify-teams.yml@release-suite/v1
+    with:
+      tag: ${{ inputs.tag }}
+    secrets:
+      # Read-only here: used to check out netra for the quality summary script.
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      TEAMS_RELEASE_WEBHOOK: ${{ secrets.TEAMS_RELEASE_WEBHOOK }}

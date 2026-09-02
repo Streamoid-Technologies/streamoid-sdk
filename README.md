@@ -20,17 +20,31 @@ reimplementation of the same contracts (not bindings around one core):
 
 | Dir | Language | Package | Consumed via |
 |---|---|---|---|
-| [`python/`](./python/) | Python | `streamoid` | git-tag dependency (`uv add "streamoid @ git+https://github.com/Streamoid-Technologies/streamoid-sdk.git@python-vX.Y.Z#subdirectory=python"`) — GitHub Packages has no PyPI registry, so this is a plain git dependency pinned to a tag |
-| [`typescript/`](./typescript/) | TypeScript | `@streamoid-technologies/sdk` | GitHub Packages npm registry |
+| [`python/`](./python/) | Python | `streamoid` | git-tag dependency (`uv add "streamoid @ git+https://github.com/Streamoid-Technologies/streamoid-sdk.git@python-vX.Y.Z#subdirectory=python"`) — resolved straight from GitHub, no registry and no token |
+| [`typescript/`](./typescript/) | TypeScript | `@streamoid/sdk` | public npm registry (`bun add @streamoid/sdk`) — no token, no `.npmrc`, same as the `@streamoid/ui`/`icons`/`settings`/`tokens` packages |
 | [`go/`](./go/) | Go | `github.com/Streamoid-Technologies/streamoid-sdk/go` | plain Go module resolution (`go get .../streamoid-sdk/go@go/vX.Y.Z`) — no registry needed |
 
 ## Versioning
 
-Each language is tagged independently since they release on separate
-schedules: `python-vX.Y.Z`, `ts-vX.Y.Z`, `go/vX.Y.Z` (the `go/` prefix is
-required by Go's nested-module tagging convention — see
-https://go.dev/ref/mod#vcs-version). A change to one language does not
-require bumping the others.
+Each language releases independently, since they move on separate schedules. A
+change to one language does not require bumping the others.
+
+- **TypeScript** ships on merge: bump `version` in `typescript/package.json` in
+  the PR, and when it lands on `develop` (the trunk — or on `main`, for a
+  hotfix), [`publish-typescript.yml`](.github/workflows/publish-typescript.yml)
+  publishes it because that version is not yet on the registry. Merging a PR
+  that touches no version is a no-op, and re-running publishes nothing. Never
+  publish by hand — a hand publish can ship a tree that exists in no commit,
+  which is exactly how a stale `@streamoid/agent` bundle once reached the
+  registry.
+- **Python and Go** are tagged: `python-vX.Y.Z` and `go/vX.Y.Z` (the `go/`
+  prefix is required by Go's nested-module tagging convention — see
+  https://go.dev/ref/mod#vcs-version). Consumers pin the tag directly, so the
+  tag *is* the release.
+
+The old `ts-vX.Y.Z` tags are historical: `@streamoid-technologies/sdk@0.1.0` on
+GitHub Packages was the last release under that name and that registry, and
+nothing consumes it. It is superseded by `@streamoid/sdk` on npm.
 
 ## Why not one shared implementation?
 

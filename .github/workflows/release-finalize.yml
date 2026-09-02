@@ -1,0 +1,22 @@
+name: Release finalize
+
+# Trigger only - see release-cut.yml. Logic lives in netra-pr-reviewer.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  finalize:
+    uses: Streamoid-Technologies/netra-pr-reviewer/.github/workflows/release-finalize.yml@release-suite/v1
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      # Optional: absent means GitHub's --generate-notes instead of LLM notes.
+      CLAUDE_API_KEY_FOR_GITHUB: ${{ secrets.CLAUDE_API_KEY_FOR_GITHUB }}

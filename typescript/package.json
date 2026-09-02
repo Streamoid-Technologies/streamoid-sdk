@@ -1,5 +1,5 @@
 {
-  "name": "@streamoid-technologies/sdk",
+  "name": "@streamoid/sdk",
   "version": "0.1.0",
   "description": "Streamoid platform SDK (L1): event envelope, C6 object keys, C3 secrets, analytics/audit capture, files index, MCP self-registration.",
   "license": "UNLICENSED",
@@ -16,7 +16,7 @@
     "dist"
   ],
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public"
   },
   "repository": {
     "type": "git",
