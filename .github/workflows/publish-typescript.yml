@@ -1,28 +1,157 @@
+# Publishes `@streamoid/sdk` to registry.npmjs.org when the version in
+# typescript/package.json is not yet on the registry.
+#
+# WHY THE PUBLIC REGISTRY, NOT GITHUB PACKAGES
+# GitHub Packages requires a `read:packages` token to install even when the
+# source repo is public, so every consuming app needed a scoped .npmrc, a CI
+# secret and a Docker build secret before it could `bun install`. The four
+# sibling packages (@streamoid/ui, /icons, /settings, /tokens) already publish
+# to registry.npmjs.org from npm-components; this makes the SDK install the
+# same way — no token, no .npmrc. The repo is public, so nothing new is
+# disclosed by the tarball being publicly readable.
+#
+# Python and Go stay on GitHub: both resolve straight from git tags
+# (`python-vX.Y.Z`, `go/vX.Y.Z`) with no registry and no token, so they never
+# had the problem this fixes.
+#
+# WHY VERSION-DIFF, NOT TAGS
+# Same reasoning as npm-components/.github/workflows/publish.yml, which this
+# mirrors: a tag or a hand publish can ship a tree that exists in no commit.
+# Triggering on "the version in package.json is not on the registry" makes the
+# run idempotent — re-running publishes nothing, a merge that touches no
+# version is a no-op, and what ships is exactly what was reviewed and merged.
+# Bump the version in the PR; merging to main ships it.
+#
+# AUTH
+#   Uses the org-level `NPM_TOKEN` secret. It must be an npm AUTOMATION token
+#   (automation tokens bypass 2FA, classic ones do not) with publish rights on
+#   the @streamoid scope on registry.npmjs.org.
+#
+#   @streamoid (npmjs) is a DIFFERENT scope and registry from
+#   @streamoid-technologies (GitHub Packages) — the old GITHUB_TOKEN this
+#   workflow used will not publish here. The "Check registry auth" step fails
+#   with that message up front rather than dying mid-publish on an E401.
+#
+#   If the org secret is scoped to selected repositories, streamoid-sdk must be
+#   added to its list. A repo-level secret of the same name would SILENTLY
+#   override the org one, so if publishes start 401ing, look for a stale
+#   repo-level `NPM_TOKEN` before anything else.
 name: publish-typescript
 
 on:
   push:
-    tags:
-      - "ts-v*"
+    branches: [main]
+    paths:
+      - "typescript/**"
+      - ".github/workflows/publish-typescript.yml"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Resolve, build and validate, but do not publish"
+        type: boolean
+        default: false
+
+# Never let two publish runs race the registry.
+concurrency:
+  group: publish-typescript
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     defaults:
       run:
         working-directory: typescript
     steps:
       - uses: actions/checkout@v4
+
       - uses: oven-sh/setup-bun@v2
+
       - run: bun install
       - run: bun run type-check
       - run: bun run test
       - run: bun run build
-      - name: Configure npm registry auth
+
+      # `npm view` on an unpublished version exits non-zero, which covers both
+      # "this version is new" and "the package is new". Read-only, so it needs
+      # no auth and runs before the token is configured.
+      - name: Work out whether this version needs publishing
+        id: plan
         run: |
-          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" >> ~/.npmrc
-          echo "@streamoid-technologies:registry=https://npm.pkg.github.com" >> ~/.npmrc
-      - run: npm publish
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "skip    ${name}@${version} — already on the registry"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "PUBLISH ${name}@${version}"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      # A package declaring `files: ["dist"]` with no dist publishes an empty
+      # tarball and npm reports success, so every declared path is checked.
+      - name: Validate artifacts
+        if: steps.plan.outputs.publish == 'true'
+        run: |
+          node <<'NODE'
+          const { readFileSync, existsSync, statSync, readdirSync } = require('node:fs')
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
+          let failed = false
+          for (const entry of pkg.files ?? []) {
+            if (!existsSync(entry)) {
+              console.error(`declares files["${entry}"] but it does not exist`)
+              failed = true
+              continue
+            }
+            const empty = statSync(entry).isDirectory()
+              ? readdirSync(entry).length === 0
+              : statSync(entry).size === 0
+            if (empty) {
+              console.error(`files["${entry}"] is empty`)
+              failed = true
+            }
+          }
+          if (failed) process.exit(1)
+          console.log('artifacts ok')
+          NODE
+
+      # Written to $HOME rather than the repo so it cannot be committed, and
+      # after `bun install` so the install never sees a half-configured token.
+      - name: Configure registry auth
+        if: steps.plan.outputs.publish == 'true' && !inputs.dry_run
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > "$HOME/.npmrc"
+
+      - name: Check registry auth
+        if: steps.plan.outputs.publish == 'true' && !inputs.dry_run
+        run: |
+          if ! whoami_out=$(npm whoami 2>&1); then
+            echo "::error::NPM_TOKEN did not authenticate against registry.npmjs.org."
+            echo "::error::npm said: ${whoami_out}"
+            echo "::error::It must be an npm AUTOMATION token with publish rights on the @streamoid scope (a GitHub Packages token will not work here)."
+            exit 1
+          fi
+          echo "authenticated to registry.npmjs.org as ${whoami_out}"
+
+      - name: Publish
+        if: steps.plan.outputs.publish == 'true' && !inputs.dry_run
+        run: npm publish --access public
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ steps.plan.outputs.publish }}" != "true" ]; then
+            echo "Nothing to publish — \`${{ steps.plan.outputs.name }}@${{ steps.plan.outputs.version }}\` is already on npm." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "### Dry run — would publish" >> "$GITHUB_STEP_SUMMARY"
+            echo "- \`${{ steps.plan.outputs.name }}@${{ steps.plan.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Published" >> "$GITHUB_STEP_SUMMARY"
+            echo "- \`${{ steps.plan.outputs.name }}@${{ steps.plan.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
