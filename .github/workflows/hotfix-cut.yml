@@ -1,0 +1,34 @@
+name: Hotfix cut
+
+# Trigger only - see release-cut.yml. Logic lives in netra-pr-reviewer.
+#
+# DELIBERATELY NOT `on: push: ["hotfix/**"]`. A push-triggered workflow runs the
+# file as it exists on the pushed branch, so anyone able to push a hotfix branch
+# could edit this stub there, redirect `uses:` at a workflow they control, and
+# receive the App credentials before any reviewed code ran. `schedule` and
+# `workflow_dispatch` both execute this file from main, which is protected.
+#
+# The cost is latency: a hotfix branch gets its draft PR within ten minutes
+# rather than instantly. Dispatch with a `branch` when that is too slow.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "A single hotfix/* branch to process now. Empty scans all."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cut:
+    uses: Streamoid-Technologies/netra-pr-reviewer/.github/workflows/hotfix-cut.yml@release-suite/v1
+    with:
+      branch: ${{ inputs.branch }}
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
