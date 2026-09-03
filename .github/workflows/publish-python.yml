@@ -1,0 +1,118 @@
+name: publish-python
+
+# Mirrors publish-typescript.yml: the version in pyproject.toml is the release
+# gate. Merge a bump and it publishes; merge anything else and it no-ops.
+#
+# No `paths:` filter, and develop is a trigger as well as main - the same fix
+# cdaf05e made for the TypeScript publisher. A paths filter means a release
+# commit that only bumps the version outside `python/` ships nothing, silently.
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and validate, but do not publish"
+        type: boolean
+        default: false
+
+concurrency:
+  group: publish-python
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # Required for PyPI Trusted Publishing (OIDC). Without it the token exchange
+  # fails with a not-obvious 403 from PyPI rather than a GitHub-side error.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+
+      - run: uv run pytest -q
+      - run: uv build
+
+      - name: Work out whether this version needs publishing
+        id: plan
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, pathlib, tomllib, urllib.error, urllib.request
+
+          project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]
+          name, version = project["name"], project["version"]
+
+          try:
+              with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/json", timeout=30) as r:
+                  published = version in json.load(r)["releases"]
+          except urllib.error.HTTPError as e:
+              if e.code != 404:
+                  raise
+              # The project does not exist on the index yet - this is the first
+              # release. Anything other than a 404 is a real error and must not
+              # be swallowed into a false "needs publishing".
+              published = False
+
+          print(f"name={name}")
+          print(f"version={version}")
+          print(f"publish={'false' if published else 'true'}")
+          PY
+          cat "$GITHUB_OUTPUT"
+
+      - name: Validate artifacts
+        if: steps.plan.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          test -d dist || { echo "::error::uv build produced no dist/"; exit 1; }
+          WHEELS=$(find dist -name '*.whl' | wc -l | tr -d ' ')
+          SDISTS=$(find dist -name '*.tar.gz' | wc -l | tr -d ' ')
+          if [ "$WHEELS" != "1" ] || [ "$SDISTS" != "1" ]; then
+            echo "::error::expected exactly one wheel and one sdist, got ${WHEELS} wheel(s) and ${SDISTS} sdist(s)"
+            find dist -type f
+            exit 1
+          fi
+          uvx twine check dist/*
+          # The filename carries the version pip will resolve. If it disagrees
+          # with pyproject.toml the guard above checked the wrong version and
+          # the publish would land somewhere nobody is looking for it.
+          if ! find dist -name "streamoid-${{ steps.plan.outputs.version }}-*.whl" | grep -q .; then
+            echo "::error::built wheel is not version ${{ steps.plan.outputs.version }}"
+            find dist -type f
+            exit 1
+          fi
+          echo "artifacts ok"
+
+      - name: Publish
+        if: steps.plan.outputs.publish == 'true' && !inputs.dry_run
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist
+          # Belt and braces: the guard above already skipped a published
+          # version, but a race with another run must not fail the release.
+          skip-existing: true
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            if [ -z "${{ steps.plan.outputs.version }}" ]; then
+              echo "The run ended before it worked out whether a publish was needed — see the failing step above."
+            elif [ "${{ steps.plan.outputs.publish }}" != "true" ]; then
+              echo "Nothing to publish — \`${{ steps.plan.outputs.name }}==${{ steps.plan.outputs.version }}\` is already on PyPI."
+              echo ""
+              echo "Bump \`version\` in \`python/pyproject.toml\` to cut a release."
+            elif [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "### Dry run — would publish"
+              echo "- \`${{ steps.plan.outputs.name }}==${{ steps.plan.outputs.version }}\`"
+            else
+              echo "### Published"
+              echo "- \`${{ steps.plan.outputs.name }}==${{ steps.plan.outputs.version }}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
