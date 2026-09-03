@@ -15,7 +15,7 @@
 // Python/TS ports there's no package-registry step -- any Go module can
 // depend on this one with a plain `go get`:
 //
-//	import "github.com/Streamoid-Technologies/streamoid-sdk/go"
+//	import "github.com/Streamoid-Technologies/streamoid-sdk-go"
 //
 // This package is self-contained (stdlib net/http only, no dependency on any
 // host application's HTTP client conventions) so it drops into any Go module

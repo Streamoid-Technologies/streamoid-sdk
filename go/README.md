@@ -5,19 +5,27 @@ for the full picture (why this exists, the other language ports, versioning).
 
 ## Install
 
-Go modules resolve directly from git tags — no registry step needed:
+Go has no package registry — the module path *is* the repository URL, and
+proxy.golang.org is a read-through cache of VCS rather than something you
+publish to. Since this repo is private, the module is published from a
+generated public mirror, [`streamoid-sdk-go`][mirror], and that is the path
+consumers import:
 
 ```bash
-go get github.com/Streamoid-Technologies/streamoid-sdk/go@go/v0.1.0
+go get github.com/Streamoid-Technologies/streamoid-sdk-go@v0.1.1
 ```
 
-Since this is a private repo, your environment needs `GOPRIVATE=github.com/Streamoid-Technologies/*`
-and git credentials configured for `github.com` (SSH key or an HTTPS credential helper).
+No `GOPRIVATE` and no credentials — it resolves through the public proxy like
+any other dependency. The mirror is read-only; this directory is the source of
+truth and `.github/workflows/sync-go-mirror.yml` publishes it. Cut a release by
+tagging `go/vX.Y.Z` here, which creates the matching `vX.Y.Z` over there.
+
+[mirror]: https://github.com/Streamoid-Technologies/streamoid-sdk-go
 
 ## Usage
 
 ```go
-import "github.com/Streamoid-Technologies/streamoid-sdk/go"
+import "github.com/Streamoid-Technologies/streamoid-sdk-go"
 
 client := streamoid.NewClient(streamoid.LoadConfig(streamoid.LoadConfigOptions{
     DefaultProduct: "catalogix",
