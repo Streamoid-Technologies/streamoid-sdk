@@ -94,12 +94,18 @@ jobs:
       # `npm view` on an unpublished version exits non-zero, which covers both
       # "this version is new" and "the package is new". Read-only, so it needs
       # no auth and runs before the token is configured.
+      #
+      # It reads the PACKUMENT, which lags a write by minutes behind the CDN —
+      # so it can 404 a version published seconds ago and wrongly plan a second
+      # publish. The per-version document propagates first, so ask that too;
+      # the Publish step below still handles the case where both are stale.
       - name: Work out whether this version needs publishing
         id: plan
         run: |
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
-          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+          if npm view "${name}@${version}" version >/dev/null 2>&1 \
+            || curl -sfo /dev/null "https://registry.npmjs.org/${name}/${version}"; then
             echo "skip    ${name}@${version} — already on the registry"
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else
@@ -155,9 +161,30 @@ jobs:
           fi
           echo "authenticated to registry.npmjs.org as ${whoami_out}"
 
+      # Merging PR #4 fired three runs inside 60s (the merge to develop, a second
+      # develop push, then develop→main). The first published 0.1.0; the other
+      # two read a stale packument, planned a publish, and their PUT was refused
+      # with `E403 ... cannot publish over the previously published versions`.
+      # That refusal means the version is on the registry, which is exactly the
+      # state this workflow exists to reach — so it is a no-op, not a failure.
+      # Two red crosses for a successful publish is how people learn to ignore
+      # CI. Any other error still fails the run.
       - name: Publish
+        id: publish
         if: steps.plan.outputs.publish == 'true' && !inputs.dry_run
-        run: npm publish --access public
+        run: |
+          if out=$(npm publish --access public 2>&1); then
+            printf '%s\n' "$out"
+            echo "outcome=published" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf '%s\n' "$out"
+          if printf '%s' "$out" | grep -q 'cannot publish over the previously published versions'; then
+            echo "::notice::${{ steps.plan.outputs.name }}@${{ steps.plan.outputs.version }} is already on the registry — a concurrent run published it. Nothing to do."
+            echo "outcome=already-published" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exit 1
 
       - name: Summary
         if: always()
@@ -169,6 +196,8 @@ jobs:
           elif [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "### Dry run — would publish" >> "$GITHUB_STEP_SUMMARY"
             echo "- \`${{ steps.plan.outputs.name }}@${{ steps.plan.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.publish.outputs.outcome }}" = "already-published" ]; then
+            echo "Nothing to publish — \`${{ steps.plan.outputs.name }}@${{ steps.plan.outputs.version }}\` was already on npm by the time this run reached it (a concurrent run published it)." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "### Published" >> "$GITHUB_STEP_SUMMARY"
             echo "- \`${{ steps.plan.outputs.name }}@${{ steps.plan.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
