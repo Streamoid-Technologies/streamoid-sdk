@@ -1,4 +1,4 @@
-module github.com/Streamoid-Technologies/streamoid-sdk/go
+module github.com/Streamoid-Technologies/streamoid-sdk-go
 
 go 1.23
 
